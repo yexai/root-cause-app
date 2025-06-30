@@ -1,26 +1,26 @@
 import streamlit as st
 import pandas as pd
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from sklearn.metrics import classification_report, mean_absolute_error, mean_squared_error
+from sklearn.metrics import classification_report, mean_squared_error, mean_absolute_error
 import seaborn as sns
 import matplotlib.pyplot as plt
 import openai
 import os
+import numpy as np
 
-# Securely load OpenAI key from Streamlit secrets
+# Secure OpenAI key from Streamlit Cloud secrets
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 st.title("🔍 Smart Root Cause Analyzer (with GPT)")
 
 uploaded_file = st.file_uploader("Upload your dataset (CSV only)", type=["csv"])
 
-# GPT Explanation Function
+# GPT-based explanation function
 def explain_root_causes(variable_importance, df, target_column, original_columns_map):
     try:
-        # Identify top dummy variables
         top_dummy_vars = variable_importance.head(3).index.tolist()
 
-        # Map back to original column names
+        # Map dummy back to original column names
         top_original_vars = []
         for dummy_col in top_dummy_vars:
             for orig_col, dummy_list in original_columns_map.items():
@@ -32,7 +32,7 @@ def explain_root_causes(variable_importance, df, target_column, original_columns
         sample = df[top_original_vars + [target_column]].dropna().head(20).to_dict(orient='records')
 
         prompt = f"""
-        You are a business analyst helping users understand root causes behind changes in a result column (“{target_column}”).
+        You are a business analyst helping users understand root causes behind changes in the result column (“{target_column}”).
         Based on these top 3 variables and sample data rows, provide a clear, practical explanation of what is most likely driving changes.
 
         Top Variables: {top_original_vars}
@@ -55,7 +55,7 @@ def explain_root_causes(variable_importance, df, target_column, original_columns
     except Exception as e:
         return f"❌ Could not generate GPT explanation: {e}"
 
-# Main App
+# Main app logic
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
     st.write("📄 Dataset Preview:")
@@ -71,10 +71,10 @@ if uploaded_file:
             X = df[variable_columns]
             y = df[target_column]
 
-            # Encode variables
+            # Encode categorical variables
             X = pd.get_dummies(X)
 
-            # Create mapping between original and dummy columns
+            # Create mapping for original vs dummy columns
             original_columns_map = {
                 col: [c for c in X.columns if c.startswith(col + "_") or c == col]
                 for col in variable_columns
@@ -90,6 +90,7 @@ if uploaded_file:
                 y_pred = model.predict(X)
 
                 importance = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=False)
+
                 st.subheader("🔑 Top Influencing Variables")
                 st.write(importance.head())
 
@@ -99,7 +100,10 @@ if uploaded_file:
                 st.pyplot(fig)
 
                 st.subheader("📈 Classification Report")
-                st.text(classification_report(y_encoded, y_pred, target_names=classes))
+                try:
+                    st.text(classification_report(y_encoded, y_pred, target_names=[str(c) for c in classes]))
+                except Exception as e:
+                    st.warning(f"⚠️ Could not display classification report: {e}")
 
             else:
                 st.info("📈 Using Regression (Target is Continuous)")
@@ -108,6 +112,7 @@ if uploaded_file:
                 y_pred = model.predict(X)
 
                 importance = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=False)
+
                 st.subheader("🔑 Top Influencing Variables")
                 st.write(importance.head())
 
@@ -118,15 +123,23 @@ if uploaded_file:
 
                 st.subheader("📊 Regression Performance")
                 mae = mean_absolute_error(y, y_pred)
-                import numpy as np mse = mean_squared_error(y, y_pred) rmse = np.sqrt(mse)
+                mse = mean_squared_error(y, y_pred)
+                rmse = np.sqrt(mse)
+
                 st.write(f"**MAE:** {mae:.2f}")
                 st.write(f"**RMSE:** {rmse:.2f}")
 
                 st.subheader("🧪 Sample Predictions")
                 st.write(pd.DataFrame({"Actual": y, "Predicted": y_pred}).head())
 
+            # GPT Explanation Section
             st.subheader("🧠 AI Explanation of Root Causes")
-            explanation = explain_root_causes(importance, df[variable_columns + [target_column]], target_column, original_columns_map)
+            explanation = explain_root_causes(
+                importance,
+                df[variable_columns + [target_column]],
+                target_column,
+                original_columns_map
+            )
             st.markdown(explanation)
 
         else:
