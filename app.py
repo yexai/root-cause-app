@@ -7,26 +7,40 @@ import matplotlib.pyplot as plt
 import openai
 import os
 
-# Load OpenAI Key from environment
+# Securely load OpenAI key from Streamlit secrets
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 st.title("🔍 Smart Root Cause Analyzer (with GPT)")
 
 uploaded_file = st.file_uploader("Upload your dataset (CSV only)", type=["csv"])
 
-def explain_root_causes(variable_importance, df, target_column):
+# GPT Explanation Function
+def explain_root_causes(variable_importance, df, target_column, original_columns_map):
     try:
-        top_vars = variable_importance.head(3).index.tolist()
-        sample = df[top_vars + [target_column]].dropna().head(20).to_dict(orient='records')
+        # Identify top dummy variables
+        top_dummy_vars = variable_importance.head(3).index.tolist()
+
+        # Map back to original column names
+        top_original_vars = []
+        for dummy_col in top_dummy_vars:
+            for orig_col, dummy_list in original_columns_map.items():
+                if dummy_col in dummy_list:
+                    top_original_vars.append(orig_col)
+                    break
+
+        top_original_vars = list(set(top_original_vars))[:3]
+        sample = df[top_original_vars + [target_column]].dropna().head(20).to_dict(orient='records')
+
         prompt = f"""
         You are a business analyst helping users understand root causes behind changes in a result column (“{target_column}”).
-        Based on these top 3 variables and sample data rows, provide a clear, practical explanation of what's most likely driving changes.
+        Based on these top 3 variables and sample data rows, provide a clear, practical explanation of what is most likely driving changes.
 
-        Top Variables: {top_vars}
+        Top Variables: {top_original_vars}
         Sample Data: {sample}
 
-        Give a human-friendly summary in plain English with actionable recommendations.
+        Give a plain-English, actionable root cause explanation.
         """
+
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
@@ -37,9 +51,11 @@ def explain_root_causes(variable_importance, df, target_column):
             max_tokens=300
         )
         return response['choices'][0]['message']['content']
+
     except Exception as e:
         return f"❌ Could not generate GPT explanation: {e}"
 
+# Main App
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
     st.write("📄 Dataset Preview:")
@@ -52,8 +68,17 @@ if uploaded_file:
     if st.button("Analyze Root Causes"):
         if target_column and variable_columns:
             df = df.dropna()
-            X = pd.get_dummies(df[variable_columns])
+            X = df[variable_columns]
             y = df[target_column]
+
+            # Encode variables
+            X = pd.get_dummies(X)
+
+            # Create mapping between original and dummy columns
+            original_columns_map = {
+                col: [c for c in X.columns if c.startswith(col + "_") or c == col]
+                for col in variable_columns
+            }
 
             is_categorical = y.dtype == 'object' or y.nunique() < 10
 
@@ -101,7 +126,8 @@ if uploaded_file:
                 st.write(pd.DataFrame({"Actual": y, "Predicted": y_pred}).head())
 
             st.subheader("🧠 AI Explanation of Root Causes")
-            explanation = explain_root_causes(importance, df[variable_columns + [target_column]], target_column)
+            explanation = explain_root_causes(importance, df[variable_columns + [target_column]], target_column, original_columns_map)
             st.markdown(explanation)
+
         else:
             st.warning("Please select both a target and at least one variable.")
