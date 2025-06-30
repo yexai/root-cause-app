@@ -8,7 +8,7 @@ import openai
 import os
 
 # Load OpenAI Key from environment
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 st.title("🔍 Smart Root Cause Analyzer (with GPT)")
 
