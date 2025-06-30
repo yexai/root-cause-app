@@ -118,7 +118,7 @@ if uploaded_file:
 
                 st.subheader("📊 Regression Performance")
                 mae = mean_absolute_error(y, y_pred)
-                rmse = mean_squared_error(y, y_pred, squared=False)
+                import numpy as np mse = mean_squared_error(y, y_pred) rmse = np.sqrt(mse)
                 st.write(f"**MAE:** {mae:.2f}")
                 st.write(f"**RMSE:** {rmse:.2f}")
 
